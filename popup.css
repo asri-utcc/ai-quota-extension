@@ -476,26 +476,26 @@ body.is-sidepanel {
    7-SEGMENT DAILY WEEKLY RACK (MINIMAL & CLEAR)
    ============================================================================ */
 .weekly-rack {
-  margin-top: 14px;
+  margin-top: 13px;
   background: #111319;
   border: 1px solid #242834;
-  border-radius: 6px;
-  padding: 4px;
+  border-radius: 5px;
+  padding: 3px;
   position: relative;
 }
 
 .segment-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: 3px;
 }
 
 .segment-cell {
   position: relative;
-  height: 26px;
+  height: 18px; /* ปรับลดความสูงลง ~30% ให้กะทัดรัดพอดี */
   background: #181b24;
   border: 1px solid #292d3b;
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: visible;
   display: flex;
   align-items: center;
@@ -510,7 +510,7 @@ body.is-sidepanel {
   width: 100%;
   height: 0%;
   opacity: 0.85;
-  border-radius: 3px;
+  border-radius: 2px;
   transition: height 0.6s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.3s ease;
 }
 
@@ -523,10 +523,11 @@ body.is-sidepanel {
   position: relative;
   z-index: 2;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 9.5px;
   font-weight: 700;
   color: #727988;
   user-select: none;
+  line-height: 1;
 }
 
 .segment-cell.has-usage .day-tag {
@@ -551,22 +552,22 @@ body.is-sidepanel {
 /* ป้ายกำกับ "▼ วันนี้" เด่นชัดเหนือช่องของวันปัจจุบัน */
 .today-pointer {
   position: absolute;
-  top: -16px;
+  top: -15px;
   left: 50%;
   transform: translateX(-50%);
   background: #facc15;
   color: #000000;
-  font-size: 9px;
+  font-size: 8.5px;
   font-family: var(--font-ui);
   font-weight: 800;
-  padding: 1px 5px;
+  padding: 1px 4px;
   border-radius: 3px;
   white-space: nowrap;
   letter-spacing: 0.2px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
   pointer-events: none;
   z-index: 10;
-  line-height: 1.2;
+  line-height: 1.1;
 }
 
 /* ไฮไลท์ช่องสีแดงเตือนทันทีเมื่อโควตาล้นเกินจุดของวันนี้ (Over-budget) */
