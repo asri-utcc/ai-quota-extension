@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Quota Monitor</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header Bar -->
+  <div class="header">
+    <div class="header-branding">
+      <img src="icon-32.png" alt="Logo" class="brand-logo" width="24" height="24" />
+      <div class="header-title-wrap">
+        <h1 class="title">AI Quota Monitor</h1>
+        <span class="subtitle">Real-time Usage Tracker</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-open-sidebar" class="sidebar-btn magnetic-btn" title="ย้ายหน้าต่างไปเปิดในแถบด้านข้าง (Chrome Side Panel)">
+        <span class="btn-icon">📌</span> Sidebar
+      </button>
+      <button id="btn-toggle-settings" class="icon-btn magnetic-btn" title="ตั้งค่าระบบ">
+        <span class="btn-icon">⚙️</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div id="settings-panel" class="settings-panel">
+    <div class="panel-section-title">
+      <span class="title-led"></span> เลือกแสดงผล AI ที่ใช้งาน (เปิด / ปิด)
+    </div>
+    <div class="provider-toggles">
+      <label class="toggle-item">
+        <span class="toggle-label"><span class="prov-dot dot-claude"></span> Claude.ai</span>
+        <input type="checkbox" id="toggle-claude" checked />
+      </label>
+      <label class="toggle-item">
+        <span class="toggle-label"><span class="prov-dot dot-gemini"></span> Gemini Pro (Flash / Argon / Claude+GPT)</span>
+        <input type="checkbox" id="toggle-gemini" checked />
+      </label>
+      <label class="toggle-item">
+        <span class="toggle-label"><span class="prov-dot dot-minimax"></span> MiniMax (Coding Plan / Token Plan)</span>
+        <input type="checkbox" id="toggle-minimax" checked />
+      </label>
+      <label class="toggle-item">
+        <span class="toggle-label"><span class="prov-dot dot-codex"></span> OpenAI Codex (ChatGPT / Codex CLI)</span>
+        <input type="checkbox" id="toggle-codex" checked />
+      </label>
+    </div>
+
+    <div class="panel-section-title" style="margin-top: 12px;">
+      <span class="title-led"></span> Antigravity / Gemini Quota Connect
+    </div>
+    <label for="antigravity-port">Antigravity Local Port (ค่าเริ่มต้น 63071):</label>
+    <input type="text" id="antigravity-port" placeholder="63071" />
+
+    <label for="antigravity-csrf">Antigravity CSRF Token (UUID ใน hub_*.json):</label>
+    <input type="password" id="antigravity-csrf" placeholder="322de770-01f9-4ce2-b342-a8240b626194" />
+
+    <label for="antigravity-refresh-token">Google Cloud Code Refresh Token (ทางเลือก):</label>
+    <input type="password" id="antigravity-refresh-token" placeholder="1//0g..." />
+
+    <label for="gemini-account">Gemini Web Account Index (Optional เช่น 0 หรือ 1):</label>
+    <input type="text" id="gemini-account" placeholder="เว้นว่างเพื่อตรวจหาอัตโนมัติ" />
+
+    <div class="panel-section-title" style="margin-top: 12px;">
+      <span class="title-led"></span> MiniMax API Configuration
+    </div>
+    <label for="minimax-key">MiniMax API Key (sk-cp-... / sk-sp-...):</label>
+    <input type="password" id="minimax-key" placeholder="Bearer sk-..." />
+
+    <label for="minimax-group">MiniMax Group ID (Optional):</label>
+    <input type="text" id="minimax-group" placeholder="เช่น 123456789" />
+
+    <label for="minimax-host">MiniMax API Host:</label>
+    <input type="text" id="minimax-host" placeholder="https://api.minimax.io" />
+
+    <div class="panel-section-title" style="margin-top: 12px;">
+      <span class="title-led"></span> OpenAI Codex Configuration
+    </div>
+    <label for="codex-token">Codex Access Token (Optional - ใช้ตรวจจับจากเว็บอัตโนมัติ):</label>
+    <input type="password" id="codex-token" placeholder="Bearer eyJhbG... หรือเว้นว่างหากล็อกอินในเว็บ" />
+
+    <button id="btn-save-key" class="save-btn magnetic-btn">บันทึกการตั้งค่า</button>
+    <div id="save-msg" class="save-msg"></div>
+  </div>
+
+  <div class="content">
+    <!-- Claude Section (Amber Accent) -->
+    <div class="provider-card card-claude magnetic-card" id="card-claude">
+      <div class="provider-title">
+        <div class="title-meta">
+          <span class="prov-brand-dot"></span>
+          <span class="prov-name">Claude.ai</span>
+        </div>
+        <span id="cl-badge" class="badge">Checking...</span>
+      </div>
+
+      <div id="cl-countdown-box" class="big-countdown-box">
+        <div id="cl-countdown-label" class="big-countdown-label">⏳ โควตาเต็ม 100% - จะรีเซ็ตในอีก</div>
+        <div id="cl-countdown-timer" class="big-countdown-timer">00h 00m 00s</div>
+      </div>
+
+      <!-- 5-Hour Metric -->
+      <div class="metric">
+        <div class="metric-info">
+          <span class="metric-name">โควตารอบ 5 ชั่วโมง (Rolling Limit)</span>
+          <span id="cl-5h-txt" class="metric-val">-%</span>
+        </div>
+        <div class="bar-bg">
+          <div id="cl-5h-bar" class="bar-fill"></div>
+        </div>
+        <div id="cl-5h-reset" class="reset-txt">Reset: -</div>
+      </div>
+
+      <!-- Weekly Metric (7-Segment Daily Rack) -->
+      <div class="metric weekly-metric">
+        <div class="metric-info">
+          <span class="metric-name">โควตารอบสัปดาห์ (7-Day Cycle)</span>
+          <div class="metric-val-wrap">
+            <span id="cl-wk-txt" class="metric-val">-%</span>
+            <span id="cl-wk-pace" class="pace-badge level-1">● On Pace</span>
+          </div>
+        </div>
+        <!-- 7 Segment Rack -->
+        <div class="weekly-rack" id="cl-wk-rack">
+          <div class="segment-grid">
+            <div class="segment-cell" data-day="1"><div class="segment-fill"></div><span class="day-tag">D1</span></div>
+            <div class="segment-cell" data-day="2"><div class="segment-fill"></div><span class="day-tag">D2</span></div>
+            <div class="segment-cell" data-day="3"><div class="segment-fill"></div><span class="day-tag">D3</span></div>
+            <div class="segment-cell" data-day="4"><div class="segment-fill"></div><span class="day-tag">D4</span></div>
+            <div class="segment-cell" data-day="5"><div class="segment-fill"></div><span class="day-tag">D5</span></div>
+            <div class="segment-cell" data-day="6"><div class="segment-fill"></div><span class="day-tag">D6</span></div>
+            <div class="segment-cell" data-day="7"><div class="segment-fill"></div><span class="day-tag">D7</span></div>
+          </div>
+        </div>
+        <div id="cl-wk-reset" class="reset-txt">Reset: -</div>
+        <div id="cl-wk-summary" class="pace-summary">กำลังคำนวณงบประมาณรายวัน...</div>
+      </div>
+    </div>
+
+    <!-- Gemini Pro Section (Warm Gold/Yellow Accent) -->
+    <div class="provider-card card-gemini magnetic-card" id="card-gemini">
+      <div class="provider-title">
+        <div class="title-meta">
+          <span class="prov-brand-dot"></span>
+          <span class="prov-name">Gemini Pro</span>
+        </div>
+        <span id="gm-badge" class="badge">Checking...</span>
+      </div>
+
+      <div id="gm-countdown-box" class="big-countdown-box">
+        <div id="gm-countdown-label" class="big-countdown-label">⏳ โควตาเต็ม 100% - จะรีเซ็ตในอีก</div>
+        <div id="gm-countdown-timer" class="big-countdown-timer">00h 00m 00s</div>
+      </div>
+
+      <!-- Container for dynamic multi-pool quota display (Flash, Argon, GPT+Claude) -->
+      <div id="gm-pools-container"></div>
+
+      <!-- Fallback generic metrics if pools are not active -->
+      <div id="gm-default-metrics">
+        <div class="metric">
+          <div class="metric-info">
+            <span class="metric-name">โควตารอบ 5 ชั่วโมง (Rolling Limit)</span>
+            <span id="gm-5h-txt" class="metric-val">-%</span>
+          </div>
+          <div class="bar-bg">
+            <div id="gm-5h-bar" class="bar-fill"></div>
+          </div>
+          <div id="gm-5h-reset" class="reset-txt">Reset: -</div>
+        </div>
+        <div class="metric weekly-metric">
+          <div class="metric-info">
+            <span class="metric-name">โควตารอบสัปดาห์ (7-Day Cycle)</span>
+            <div class="metric-val-wrap">
+              <span id="gm-wk-txt" class="metric-val">-%</span>
+              <span id="gm-wk-pace" class="pace-badge level-1">● On Pace</span>
+            </div>
+          </div>
+          <div class="weekly-rack" id="gm-wk-rack">
+            <div class="segment-grid">
+              <div class="segment-cell" data-day="1"><div class="segment-fill"></div><span class="day-tag">D1</span></div>
+              <div class="segment-cell" data-day="2"><div class="segment-fill"></div><span class="day-tag">D2</span></div>
+              <div class="segment-cell" data-day="3"><div class="segment-fill"></div><span class="day-tag">D3</span></div>
+              <div class="segment-cell" data-day="4"><div class="segment-fill"></div><span class="day-tag">D4</span></div>
+              <div class="segment-cell" data-day="5"><div class="segment-fill"></div><span class="day-tag">D5</span></div>
+              <div class="segment-cell" data-day="6"><div class="segment-fill"></div><span class="day-tag">D6</span></div>
+              <div class="segment-cell" data-day="7"><div class="segment-fill"></div><span class="day-tag">D7</span></div>
+            </div>
+          </div>
+          <div id="gm-wk-reset" class="reset-txt">Reset: -</div>
+          <div id="gm-wk-summary" class="pace-summary">กำลังคำนวณงบประมาณรายวัน...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MiniMax Section (Sage Lime Accent) -->
+    <div class="provider-card card-minimax magnetic-card" id="card-minimax">
+      <div class="provider-title">
+        <div class="title-meta">
+          <span class="prov-brand-dot"></span>
+          <span class="prov-name">MiniMax</span>
+        </div>
+        <span id="mm-badge" class="badge">Checking...</span>
+      </div>
+
+      <div id="mm-countdown-box" class="big-countdown-box">
+        <div id="mm-countdown-label" class="big-countdown-label">⏳ โควตาเต็ม 100% - จะรีเซ็ตในอีก</div>
+        <div id="mm-countdown-timer" class="big-countdown-timer">00h 00m 00s</div>
+      </div>
+
+      <div class="metric">
+        <div class="metric-info">
+          <span class="metric-name">โควตารอบ 5 ชั่วโมง (Rolling Limit)</span>
+          <span id="mm-5h-txt" class="metric-val">-%</span>
+        </div>
+        <div class="bar-bg">
+          <div id="mm-5h-bar" class="bar-fill"></div>
+        </div>
+        <div id="mm-5h-reset" class="reset-txt">Reset: -</div>
+      </div>
+
+      <div class="metric weekly-metric">
+        <div class="metric-info">
+          <span class="metric-name">โควตารอบสัปดาห์ (7-Day Cycle)</span>
+          <div class="metric-val-wrap">
+            <span id="mm-wk-txt" class="metric-val">-%</span>
+            <span id="mm-wk-pace" class="pace-badge level-1">● On Pace</span>
+          </div>
+        </div>
+        <div class="weekly-rack" id="mm-wk-rack">
+          <div class="segment-grid">
+            <div class="segment-cell" data-day="1"><div class="segment-fill"></div><span class="day-tag">D1</span></div>
+            <div class="segment-cell" data-day="2"><div class="segment-fill"></div><span class="day-tag">D2</span></div>
+            <div class="segment-cell" data-day="3"><div class="segment-fill"></div><span class="day-tag">D3</span></div>
+            <div class="segment-cell" data-day="4"><div class="segment-fill"></div><span class="day-tag">D4</span></div>
+            <div class="segment-cell" data-day="5"><div class="segment-fill"></div><span class="day-tag">D5</span></div>
+            <div class="segment-cell" data-day="6"><div class="segment-fill"></div><span class="day-tag">D6</span></div>
+            <div class="segment-cell" data-day="7"><div class="segment-fill"></div><span class="day-tag">D7</span></div>
+          </div>
+        </div>
+        <div id="mm-wk-reset" class="reset-txt">Reset: -</div>
+        <div id="mm-wk-summary" class="pace-summary">กำลังคำนวณงบประมาณรายวัน...</div>
+      </div>
+    </div>
+
+    <!-- OpenAI Codex Section (Emerald Teal Accent) -->
+    <div class="provider-card card-codex magnetic-card" id="card-codex">
+      <div class="provider-title">
+        <div class="title-meta">
+          <span class="prov-brand-dot"></span>
+          <span class="prov-name">OpenAI Codex</span>
+        </div>
+        <span id="cx-badge" class="badge">Checking...</span>
+      </div>
+
+      <div id="cx-countdown-box" class="big-countdown-box">
+        <div id="cx-countdown-label" class="big-countdown-label">⏳ โควตาเต็ม 100% - จะรีเซ็ตในอีก</div>
+        <div id="cx-countdown-timer" class="big-countdown-timer">00h 00m 00s</div>
+      </div>
+
+      <div class="metric">
+        <div class="metric-info">
+          <span class="metric-name">โควตารอบ 5 ชั่วโมง (Rolling Limit)</span>
+          <span id="cx-5h-txt" class="metric-val">-%</span>
+        </div>
+        <div class="bar-bg">
+          <div id="cx-5h-bar" class="bar-fill"></div>
+        </div>
+        <div id="cx-5h-reset" class="reset-txt">รีเซ็ต: -</div>
+      </div>
+
+      <div class="metric weekly-metric">
+        <div class="metric-info">
+          <span class="metric-name">โควตารอบสัปดาห์ (7-Day Cycle)</span>
+          <div class="metric-val-wrap">
+            <span id="cx-wk-txt" class="metric-val">-%</span>
+            <span id="cx-wk-pace" class="pace-badge level-1">● On Pace</span>
+          </div>
+        </div>
+        <div class="weekly-rack" id="cx-wk-rack">
+          <div class="segment-grid">
+            <div class="segment-cell" data-day="1"><div class="segment-fill"></div><span class="day-tag">D1</span></div>
+            <div class="segment-cell" data-day="2"><div class="segment-fill"></div><span class="day-tag">D2</span></div>
+            <div class="segment-cell" data-day="3"><div class="segment-fill"></div><span class="day-tag">D3</span></div>
+            <div class="segment-cell" data-day="4"><div class="segment-fill"></div><span class="day-tag">D4</span></div>
+            <div class="segment-cell" data-day="5"><div class="segment-fill"></div><span class="day-tag">D5</span></div>
+            <div class="segment-cell" data-day="6"><div class="segment-fill"></div><span class="day-tag">D6</span></div>
+            <div class="segment-cell" data-day="7"><div class="segment-fill"></div><span class="day-tag">D7</span></div>
+          </div>
+        </div>
+        <div id="cx-wk-reset" class="reset-txt">รีเซ็ต: -</div>
+        <div id="cx-wk-summary" class="pace-summary">กำลังคำนวณงบประมาณรายวัน...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimal Status Footer -->
+  <div class="footer">
+    <div class="footer-status">
+      <span class="status-dot"></span>
+      <span id="last-updated">กำลังโหลดข้อมูล...</span>
+    </div>
+    <button id="btn-refresh" class="refresh-btn magnetic-btn">
+      <span class="refresh-icon">🔄</span> รีเฟรช
+    </button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
