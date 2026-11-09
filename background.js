@@ -10,7 +10,7 @@ const GEMINI_TOKENS_TTL_MS = 20 * 60 * 1000;
 const GOOGLE_CLIENT_ID = '';
 const GOOGLE_CLIENT_SECRET = '';
 const DEFAULT_ANTIGRAVITY_PORT = 63071;
-const DEFAULT_ANTIGRAVITY_CSRF = '';
+const DEFAULT_ANTIGRAVITY_CSRF = '322de770-01f9-4ce2-b342-a8240b626194';
 const DEFAULT_ANTIGRAVITY_REFRESH_TOKEN = '';
 
 let geminiReqSeq = Math.floor(Math.random() * 9000) + 1000;
@@ -443,30 +443,39 @@ function parseAntigravityGroups(groups, now = Date.now()) {
   };
 }
 
+const KNOWN_ANTIGRAVITY_CSRF = '322de770-01f9-4ce2-b342-a8240b626194';
+
 async function getAntigravityLocalUsage(port = DEFAULT_ANTIGRAVITY_PORT, csrfToken = DEFAULT_ANTIGRAVITY_CSRF) {
-  const url = `http://127.0.0.1:${port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary`;
-  const res = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Connect-Protocol-Version': '1',
-      ...(csrfToken ? { 'X-Codeium-Csrf-Token': csrfToken } : {})
-    },
-    body: JSON.stringify({}),
-    timeout: 5000
-  });
+  const ports = [...new Set([Number(port) || 63071, 63071, 63069, 63070])];
+  const tokens = [...new Set([csrfToken, DEFAULT_ANTIGRAVITY_CSRF, KNOWN_ANTIGRAVITY_CSRF, ''].filter(Boolean))];
 
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+  for (const p of ports) {
+    for (const token of tokens) {
+      try {
+        const url = `http://127.0.0.1:${p}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary`;
+        const res = await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+            ...(token ? { 'X-Codeium-Csrf-Token': token } : {})
+          },
+          body: JSON.stringify({}),
+          timeout: 4000
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const groups = data?.response?.groups;
+          if (Array.isArray(groups) && groups.length > 0) {
+            return parseAntigravityGroups(groups);
+          }
+        }
+      } catch (_) {}
+    }
   }
 
-  const data = await res.json();
-  const groups = data?.response?.groups;
-  if (!Array.isArray(groups) || groups.length === 0) {
-    throw new Error('NO_GROUPS');
-  }
-
-  return parseAntigravityGroups(groups);
+  throw new Error('LOCAL_ANTIGRAVITY_UNAVAILABLE');
 }
 
 async function getAntigravityOAuthAccessToken(refreshToken) {
@@ -850,7 +859,7 @@ async function getGeminiUsage() {
     }
 
     if (zeroFallback) return zeroFallback;
-    return { error: lastError || 'Not Connected' };
+    return { error: lastError || 'เชื่อมต่อไม่ได้ (กรุณาเปิด Antigravity หรือล็อกอินเว็บ Gemini)' };
   } catch (err) {
     return { error: err?.message || 'Net Error' };
   }

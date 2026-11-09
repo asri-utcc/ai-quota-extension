@@ -119,7 +119,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyProviderVisibility('codex', showCodex);
 
     if (inputAgPort) inputAgPort.value = res.antigravityPort || '63071';
-    if (inputAgCsrf) inputAgCsrf.value = res.antigravityCsrf || '';
+    if (inputAgCsrf) inputAgCsrf.value = res.antigravityCsrf || '322de770-01f9-4ce2-b342-a8240b626194';
     if (inputAgRefresh) inputAgRefresh.value = res.antigravityRefreshToken || '';
     if (res.geminiAccountIndex !== undefined && inputGmAccount) {
       inputGmAccount.value = res.geminiAccountIndex;
