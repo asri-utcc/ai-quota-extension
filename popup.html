@@ -55,11 +55,25 @@
     <div class="panel-section-title" style="margin-top: 12px;">
       <span class="title-led"></span> Antigravity / Gemini Quota Connect
     </div>
-    <label for="antigravity-port">Antigravity Local Port (ค่าเริ่มต้น 63071):</label>
-    <input type="text" id="antigravity-port" placeholder="63071" />
+    <div style="margin-bottom: 8px;">
+      <button id="btn-autodetect-antigravity" class="save-btn magnetic-btn" style="background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.4); color: #fde047; font-size: 11.5px; padding: 7px 10px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;">
+        🔍 ค้นหาพอร์ตและโทเค็น IDE อัตโนมัติ (Auto-Detect)
+      </button>
+      <div id="autodetect-status" style="font-size: 11px; margin-top: 4px; min-height: 14px; text-align: center;"></div>
+    </div>
 
-    <label for="antigravity-csrf">Antigravity CSRF Token (UUID ใน hub_*.json):</label>
-    <input type="password" id="antigravity-csrf" placeholder="322de770-01f9-4ce2-b342-a8240b626194" />
+    <label for="gemini-source-mode">โหมดดึงข้อมูล Gemini Pro:</label>
+    <select id="gemini-source-mode" style="width: 100%; padding: 7px 8px; margin-bottom: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); font-size: 12px; font-family: var(--font-ui);">
+      <option value="auto">ตรวจหาอัตโนมัติ (แนะนำ: ค้นหา IDE ก่อน แล้วใช้แคช/เว็บ)</option>
+      <option value="antigravity">Antigravity IDE เท่านั้น (3 Quota Pools)</option>
+      <option value="web">Gemini Web เท่านั้น (gemini.google.com)</option>
+    </select>
+
+    <label for="antigravity-port">Antigravity Local Port (จะอัปเดตอัตโนมัติ):</label>
+    <input type="text" id="antigravity-port" placeholder="เช่น 62937 หรือ 63071" />
+
+    <label for="antigravity-csrf">Antigravity CSRF Token (จะอัปเดตอัตโนมัติ):</label>
+    <input type="password" id="antigravity-csrf" placeholder="ตรวจพบอัตโนมัติจาก IDE" />
 
     <label for="antigravity-refresh-token">Google Cloud Code Refresh Token (ทางเลือก):</label>
     <input type="password" id="antigravity-refresh-token" placeholder="1//0g..." />
@@ -149,6 +163,7 @@
         <div class="title-meta">
           <span class="prov-brand-dot"></span>
           <span class="prov-name">Gemini Pro</span>
+          <span id="gm-source-tag" class="source-tag">Antigravity IDE</span>
         </div>
         <span id="gm-badge" class="badge">Checking...</span>
       </div>

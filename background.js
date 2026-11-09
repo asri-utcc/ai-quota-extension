@@ -54,8 +54,31 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
         .catch((err) => sendResponse({
           claude: { error: 'SYS_ERROR' },
           gemini: { error: 'SYS_ERROR' },
-          minimax: { error: err?.message || 'SYS_ERROR' }
+          minimax: { error: err?.message || 'SYS_ERROR' },
+          codex: { error: 'SYS_ERROR' }
         }));
+      return true;
+    }
+
+    if (request.action === 'AUTODETECT_ANTIGRAVITY') {
+      (async () => {
+        try {
+          const storage = await chrome.storage.local.get(['antigravityPort']);
+          const hint = Number(storage.antigravityPort) || DEFAULT_ANTIGRAVITY_PORT;
+          const discovered = await discoverAntigravityLocalServer(hint);
+          if (discovered && discovered.token) {
+            await chrome.storage.local.set({
+              antigravityPort: String(discovered.port),
+              antigravityCsrf: discovered.token
+            });
+            sendResponse({ success: true, port: discovered.port, token: discovered.token });
+          } else {
+            sendResponse({ success: false, error: 'NOT_FOUND' });
+          }
+        } catch (e) {
+          sendResponse({ success: false, error: e?.message || 'SCAN_FAILED' });
+        }
+      })();
       return true;
     }
   });
@@ -445,34 +468,109 @@ function parseAntigravityGroups(groups, now = Date.now()) {
 
 const KNOWN_ANTIGRAVITY_CSRF = '322de770-01f9-4ce2-b342-a8240b626194';
 
-async function getAntigravityLocalUsage(port = DEFAULT_ANTIGRAVITY_PORT, csrfToken = DEFAULT_ANTIGRAVITY_CSRF) {
-  const ports = [...new Set([Number(port) || 63071, 63071, 63069, 63070])];
-  const tokens = [...new Set([csrfToken, DEFAULT_ANTIGRAVITY_CSRF, KNOWN_ANTIGRAVITY_CSRF, ''].filter(Boolean))];
-
-  for (const p of ports) {
-    for (const token of tokens) {
-      try {
-        const url = `http://127.0.0.1:${p}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary`;
-        const res = await fetchWithTimeout(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Connect-Protocol-Version': '1',
-            ...(token ? { 'X-Codeium-Csrf-Token': token } : {})
-          },
-          body: JSON.stringify({}),
-          timeout: 4000
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const groups = data?.response?.groups;
-          if (Array.isArray(groups) && groups.length > 0) {
-            return parseAntigravityGroups(groups);
-          }
-        }
-      } catch (_) {}
+async function probeAntigravityPort(p, timeoutMs = 250) {
+  try {
+    const res = await fetchWithTimeout(`http://127.0.0.1:${p}/`, { timeout: timeoutMs });
+    if (!res.ok && res.status !== 200) return null;
+    const html = await res.text();
+    if (html && (html.includes('csrfToken') || html.includes('__APP_CONFIG__'))) {
+      const m = html.match(/"csrfToken"\s*:\s*"([^"]+)"/);
+      if (m && m[1]) {
+        return { port: p, token: m[1] };
+      }
     }
+  } catch (_) {}
+  return null;
+}
+
+async function discoverAntigravityLocalServer(hintPort) {
+  const priorityPorts = [...new Set([
+    Number(hintPort) || 0,
+    62937, 63071, 63069, 63070, 62936, 62938, 62935, 63072, 63073, 63074, 63075
+  ])].filter((p) => p > 0);
+
+  // 1. Check priority ports first
+  for (const p of priorityPorts) {
+    const found = await probeAntigravityPort(p, 180);
+    if (found && found.token) return found;
+  }
+
+  // 2. Scan window 62850 - 63200 in parallel batches of 30
+  const range1 = [];
+  for (let p = 62850; p <= 63200; p++) {
+    if (!priorityPorts.includes(p)) range1.push(p);
+  }
+  for (let i = 0; i < range1.length; i += 30) {
+    const batch = range1.slice(i, i + 30);
+    const results = await Promise.all(batch.map((p) => probeAntigravityPort(p, 220)));
+    const hit = results.find((r) => r && r.token);
+    if (hit) return hit;
+  }
+
+  // 3. Scan secondary window 63201 - 63500
+  const range2 = [];
+  for (let p = 63201; p <= 63500; p++) range2.push(p);
+  for (let i = 0; i < range2.length; i += 30) {
+    const batch = range2.slice(i, i + 30);
+    const results = await Promise.all(batch.map((p) => probeAntigravityPort(p, 220)));
+    const hit = results.find((r) => r && r.token);
+    if (hit) return hit;
+  }
+
+  return null;
+}
+
+async function callAntigravityQuotaRpc(port, token) {
+  const url = `http://127.0.0.1:${port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary`;
+  const res = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Connect-Protocol-Version': '1',
+      ...(token ? { 'X-Codeium-Csrf-Token': token } : {})
+    },
+    body: JSON.stringify({}),
+    timeout: 3500
+  });
+
+  if (!res.ok) {
+    throw new Error(`RPC HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  const groups = data?.response?.groups;
+  if (!Array.isArray(groups) || groups.length === 0) {
+    throw new Error('NO_GROUPS');
+  }
+
+  return parseAntigravityGroups(groups);
+}
+
+async function getAntigravityLocalUsage(port = DEFAULT_ANTIGRAVITY_PORT, csrfToken = DEFAULT_ANTIGRAVITY_CSRF) {
+  const initialPort = Number(port) || DEFAULT_ANTIGRAVITY_PORT;
+  const initialToken = (csrfToken || '').trim();
+
+  // Attempt 1: Try current configured port and token
+  if (initialToken) {
+    try {
+      return await callAntigravityQuotaRpc(initialPort, initialToken);
+    } catch (_) {}
+  }
+
+  // Attempt 2: Auto-discover active Antigravity port and token dynamically
+  const discovered = await discoverAntigravityLocalServer(initialPort);
+  if (discovered && discovered.token) {
+    // Persist discovered credentials so next request is instant
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({
+        antigravityPort: String(discovered.port),
+        antigravityCsrf: discovered.token
+      }).catch(() => {});
+    }
+
+    try {
+      return await callAntigravityQuotaRpc(discovered.port, discovered.token);
+    } catch (_) {}
   }
 
   throw new Error('LOCAL_ANTIGRAVITY_UNAVAILABLE');
@@ -804,29 +902,63 @@ async function getGeminiUsage() {
       'antigravityPort',
       'antigravityCsrf',
       'antigravityRefreshToken',
-      'geminiAccountIndex'
+      'geminiAccountIndex',
+      'geminiSourceMode',
+      'lastAntigravityPools',
+      'lastAntigravityTimestamp'
     ]);
 
+    const sourceMode = storage.geminiSourceMode || 'auto'; // 'auto' | 'antigravity' | 'web'
     const port = Number(storage.antigravityPort) || DEFAULT_ANTIGRAVITY_PORT;
     const csrfToken = (storage.antigravityCsrf || DEFAULT_ANTIGRAVITY_CSRF).trim();
     const refreshToken = (storage.antigravityRefreshToken || DEFAULT_ANTIGRAVITY_REFRESH_TOKEN).trim();
 
-    // 1. Primary: Try Local Antigravity Language Server
-    try {
-      const localResult = await getAntigravityLocalUsage(port, csrfToken);
-      if (localResult && localResult.pools && localResult.pools.length > 0) {
-        return localResult;
-      }
-    } catch (_) {}
-
-    // 2. Secondary: Try Google Cloud Code OAuth API with Refresh Token
-    if (refreshToken) {
+    // 1. Primary: Try Local Antigravity Language Server (unless forced to 'web')
+    if (sourceMode !== 'web') {
       try {
-        const cloudResult = await getAntigravityCloudCodeUsage(refreshToken);
-        if (cloudResult && cloudResult.pools && cloudResult.pools.length > 0) {
-          return cloudResult;
+        const localResult = await getAntigravityLocalUsage(port, csrfToken);
+        if (localResult && localResult.pools && localResult.pools.length > 0) {
+          localResult.source = 'antigravity';
+          // Cache pools for resilient fallback across IDE restarts
+          if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+            chrome.storage.local.set({
+              lastAntigravityPools: localResult.pools,
+              lastAntigravityTimestamp: Date.now()
+            }).catch(() => {});
+          }
+          return localResult;
         }
       } catch (_) {}
+
+      // 2. Secondary: Try Google Cloud Code OAuth API with Refresh Token
+      if (refreshToken) {
+        try {
+          const cloudResult = await getAntigravityCloudCodeUsage(refreshToken);
+          if (cloudResult && cloudResult.pools && cloudResult.pools.length > 0) {
+            cloudResult.source = 'antigravity_cloud';
+            return cloudResult;
+          }
+        } catch (_) {}
+      }
+
+      // Resilient Cache: If Antigravity was running recently (within 48 hours),
+      // DO NOT erase the pools to 0%! Return cached pools with isCached flag
+      if (Array.isArray(storage.lastAntigravityPools) && storage.lastAntigravityPools.length > 0) {
+        const ageMs = Date.now() - (storage.lastAntigravityTimestamp || 0);
+        if (ageMs < 48 * 3600 * 1000) {
+          return {
+            pools: storage.lastAntigravityPools,
+            source: 'antigravity',
+            isCached: true,
+            cachedTimestamp: storage.lastAntigravityTimestamp || Date.now()
+          };
+        }
+      }
+
+      // If source mode is strictly 'antigravity', do not fall through to Gemini Web
+      if (sourceMode === 'antigravity') {
+        return { error: 'กรุณาเปิด Antigravity IDE (ไม่พบการเชื่อมต่อ)' };
+      }
     }
 
     // 3. Fallback: Try Gemini Web session cookies
@@ -843,6 +975,7 @@ async function getGeminiUsage() {
       try {
         const result = await fetchGeminiQuotaForAccount(authuser);
         if (result) {
+          result.source = 'gemini_web';
           if (result.fiveHour > 0 || result.weekly > 0 || result.fiveHourResetEpoch || result.weeklyResetEpoch || candidates.length === 1) {
             return result;
           }
@@ -858,7 +991,10 @@ async function getGeminiUsage() {
       }
     }
 
-    if (zeroFallback) return zeroFallback;
+    if (zeroFallback) {
+      zeroFallback.source = 'gemini_web';
+      return zeroFallback;
+    }
     return { error: lastError || 'เชื่อมต่อไม่ได้ (กรุณาเปิด Antigravity หรือล็อกอินเว็บ Gemini)' };
   } catch (err) {
     return { error: err?.message || 'Net Error' };

@@ -61,6 +61,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputAgCsrf = document.getElementById('antigravity-csrf');
   const inputAgRefresh = document.getElementById('antigravity-refresh-token');
   const inputGmAccount = document.getElementById('gemini-account');
+  const selectGmSourceMode = document.getElementById('gemini-source-mode');
+  const btnAutoDetectAg = document.getElementById('btn-autodetect-antigravity');
+  const autoDetectStatus = document.getElementById('autodetect-status');
   const inputMmKey = document.getElementById('minimax-key');
   const inputMmGroup = document.getElementById('minimax-group');
   const inputMmHost = document.getElementById('minimax-host');
@@ -94,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'showGemini',
     'showMinimax',
     'showCodex',
+    'geminiSourceMode',
     'antigravityPort',
     'antigravityCsrf',
     'antigravityRefreshToken',
@@ -118,8 +122,9 @@ document.addEventListener('DOMContentLoaded', () => {
     applyProviderVisibility('minimax', showMinimax);
     applyProviderVisibility('codex', showCodex);
 
+    if (selectGmSourceMode) selectGmSourceMode.value = res.geminiSourceMode || 'auto';
     if (inputAgPort) inputAgPort.value = res.antigravityPort || '63071';
-    if (inputAgCsrf) inputAgCsrf.value = res.antigravityCsrf || '322de770-01f9-4ce2-b342-a8240b626194';
+    if (inputAgCsrf) inputAgCsrf.value = res.antigravityCsrf || '';
     if (inputAgRefresh) inputAgRefresh.value = res.antigravityRefreshToken || '';
     if (res.geminiAccountIndex !== undefined && inputGmAccount) {
       inputGmAccount.value = res.geminiAccountIndex;
@@ -131,6 +136,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadAllUsage();
   });
+
+  // Antigravity Port Auto-Detect Button Listener
+  if (btnAutoDetectAg) {
+    btnAutoDetectAg.addEventListener('click', () => {
+      if (autoDetectStatus) {
+        autoDetectStatus.style.color = '#fbbf24';
+        autoDetectStatus.textContent = '⏳ กำลังสแกนพอร์ตและดึง CSRF Token จาก IDE...';
+      }
+      chrome.runtime.sendMessage({ action: 'AUTODETECT_ANTIGRAVITY' }, (res) => {
+        if (res && res.success) {
+          if (inputAgPort) inputAgPort.value = String(res.port);
+          if (inputAgCsrf) inputAgCsrf.value = res.token;
+          if (autoDetectStatus) {
+            autoDetectStatus.style.color = 'var(--status-ok)';
+            autoDetectStatus.textContent = `✓ ตรวจพบ Antigravity ที่พอร์ต ${res.port} (เชื่อมต่อสำเร็จ!)`;
+          }
+          loadAllUsage();
+        } else {
+          if (autoDetectStatus) {
+            autoDetectStatus.style.color = 'var(--status-alarm)';
+            autoDetectStatus.textContent = '✗ ไม่พบ Antigravity IDE ที่กำลังเปิดอยู่ (กรุณาเปิด IDE ก่อน)';
+          }
+        }
+      });
+    });
+  }
 
   // Real-time toggle change listeners
   const setupToggle = (checkbox, provider) => {
@@ -157,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showGemini: toggleGemini ? toggleGemini.checked : true,
         showMinimax: toggleMinimax ? toggleMinimax.checked : true,
         showCodex: toggleCodex ? toggleCodex.checked : true,
+        geminiSourceMode: selectGmSourceMode ? selectGmSourceMode.value : 'auto',
         antigravityPort: inputAgPort ? inputAgPort.value.trim() : '63071',
         antigravityCsrf: inputAgCsrf ? inputAgCsrf.value.trim() : '',
         antigravityRefreshToken: inputAgRefresh ? inputAgRefresh.value.trim() : '',
@@ -626,10 +658,27 @@ function renderProviderCard(provider, data, okLabel = 'Connected') {
   }
 
   const isExhausted = Boolean(data.isExhausted || data.fiveHour >= 100 || data.weekly >= 100);
-  badge.textContent = isExhausted ? 'โควตาเต็ม 100%' : okLabel;
-  badge.className = isExhausted ? 'badge exhausted' : 'badge active';
+  if (data.isCached) {
+    badge.textContent = 'แคช (IDE ปิดอยู่)';
+    badge.className = 'badge cached';
+  } else {
+    badge.textContent = isExhausted ? 'โควตาเต็ม 100%' : okLabel;
+    badge.className = isExhausted ? 'badge exhausted' : 'badge active';
+  }
 
   applyExhaustedState(provider, isExhausted, data.targetResetEpoch, data.exhaustedWindow);
+
+  // Update source tag for Gemini
+  if (provider === 'gemini') {
+    const srcTag = document.getElementById('gm-source-tag');
+    if (srcTag) {
+      if (data.source === 'antigravity' || data.source === 'antigravity_cloud') {
+        srcTag.textContent = data.isCached ? 'Antigravity (แคชล่าสุด)' : 'Antigravity IDE';
+      } else {
+        srcTag.textContent = 'Gemini Web';
+      }
+    }
+  }
 
   // Special multi-pool handling for Gemini Pro
   if (provider === 'gemini' && Array.isArray(data.pools) && data.pools.length > 0) {
