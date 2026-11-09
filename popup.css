@@ -476,11 +476,12 @@ body.is-sidepanel {
    7-SEGMENT DAILY WEEKLY RACK (MINIMAL & CLEAR)
    ============================================================================ */
 .weekly-rack {
-  margin-top: 5px;
+  margin-top: 14px;
   background: #111319;
   border: 1px solid #242834;
   border-radius: 6px;
   padding: 4px;
+  position: relative;
 }
 
 .segment-grid {
@@ -491,14 +492,15 @@ body.is-sidepanel {
 
 .segment-cell {
   position: relative;
-  height: 25px;
+  height: 26px;
   background: #181b24;
   border: 1px solid #292d3b;
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .segment-fill {
@@ -507,8 +509,9 @@ body.is-sidepanel {
   left: 0;
   width: 100%;
   height: 0%;
-  opacity: 0.8;
-  transition: height 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+  opacity: 0.85;
+  border-radius: 3px;
+  transition: height 0.6s cubic-bezier(0.25, 1, 0.5, 1), background-color 0.3s ease;
 }
 
 .card-claude .segment-fill { background: var(--claude-accent); }
@@ -530,20 +533,56 @@ body.is-sidepanel {
   color: #ffffff;
 }
 
-/* Current Day Highlight */
+/* ============================================================================
+   TODAY POINTER & OVER-BUDGET HIGHLIGHTS (จุดของวันนี้ และส่วนที่ใช้เกินวัน)
+   ============================================================================ */
 .segment-cell.is-today {
-  border-color: #facc15;
+  border: 2px solid #facc15 !important;
+  background: rgba(250, 204, 21, 0.12) !important;
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.45);
+  z-index: 4;
 }
 
-.segment-cell.is-today::before {
-  content: '';
+.segment-cell.is-today .day-tag {
+  color: #fef08a !important;
+  font-weight: 800;
+}
+
+/* ป้ายกำกับ "▼ วันนี้" เด่นชัดเหนือช่องของวันปัจจุบัน */
+.today-pointer {
   position: absolute;
-  top: 2px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
   background: #facc15;
-  z-index: 3;
+  color: #000000;
+  font-size: 9px;
+  font-family: var(--font-ui);
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  z-index: 10;
+  line-height: 1.2;
+}
+
+/* ไฮไลท์ช่องสีแดงเตือนทันทีเมื่อโควตาล้นเกินจุดของวันนี้ (Over-budget) */
+.segment-cell.is-over-budget {
+  border-color: rgba(239, 68, 68, 0.7) !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+}
+
+.segment-cell.is-over-budget .segment-fill {
+  background: linear-gradient(180deg, #ef4444 0%, #b91c1c 100%) !important;
+  opacity: 0.95 !important;
+}
+
+.segment-cell.is-over-budget .day-tag {
+  color: #fecaca !important;
+  font-weight: 800;
 }
 
 /* ============================================================================

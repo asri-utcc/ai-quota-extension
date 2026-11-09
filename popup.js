@@ -295,13 +295,14 @@ function calculateWeeklyPace(pct, resetEpoch, now = Date.now()) {
     : remainingQuotaPct;
 
   const currentDayIndex = Math.min(7, Math.max(1, Math.ceil(daysElapsed) || 1));
+  const daysAhead = delta > 0 ? (delta / (100 / cycleDays)).toFixed(1) : '0';
 
   // Determine 3-Level Warning Status
   let level = 1;
   let levelClass = 'level-1';
   let badgeLabel = '● ปกติ (On Pace)';
   let summaryClass = '';
-  let summaryText = `เหลืออีก ${daysRemainingClamped.toFixed(1)} วัน | ใช้ได้เฉลี่ย ~${suggestedDailyBudget.toFixed(0)}%/วัน`;
+  let summaryText = `อยู่ในเกณฑ์: เหลืออีก ${daysRemainingClamped.toFixed(1)} วัน | ใช้ได้เฉลี่ย ~${suggestedDailyBudget.toFixed(0)}%/วัน`;
 
   // LEVEL 3 (CRITICAL): Delta > 20% or high usage near exhaustion
   if (delta > 20 || (safePct >= 90 && daysRemainingClamped >= 1.5) || safePct >= 98) {
@@ -309,7 +310,7 @@ function calculateWeeklyPace(pct, resetEpoch, now = Date.now()) {
     levelClass = 'level-3';
     badgeLabel = '⚡ วิกฤติ (Critical)';
     summaryClass = 'level-3-summary';
-    summaryText = `เสี่ยงหมดก่อนรอบ! เกินเป้า +${Math.max(0, Math.round(delta))}% | เหลือ ${daysRemainingClamped.toFixed(1)} วัน (ควรชะลอการใช้)`;
+    summaryText = `วิกฤติ! ใช้ล้นเกินจุดวันนี้ไป ~${daysAhead} วัน (+${Math.max(0, Math.round(delta))}%) | เหลือ ${daysRemainingClamped.toFixed(1)} วัน (ควรชะลอการใช้)`;
   }
   // LEVEL 2 (HIGH BURN): Delta > 5% or usage high relative to time left
   else if (delta > 5 || (safePct >= 75 && daysRemainingClamped >= 2)) {
@@ -317,7 +318,7 @@ function calculateWeeklyPace(pct, resetEpoch, now = Date.now()) {
     levelClass = 'level-2';
     badgeLabel = '▲ เร่งตัว (High Burn)';
     summaryClass = 'level-2-summary';
-    summaryText = `ใช้เกินเป้าวัน +${Math.round(delta)}% | เหลือ ${daysRemainingClamped.toFixed(1)} วัน (แนะชะลอเหลือ ~${suggestedDailyBudget.toFixed(0)}%/วัน)`;
+    summaryText = `เร่งตัว: ใช้ล้นเกินจุดวันนี้ไป ~${daysAhead} วัน (+${Math.round(delta)}%) | เหลือ ${daysRemainingClamped.toFixed(1)} วัน (แนะชะลอเหลือ ~${suggestedDailyBudget.toFixed(0)}%/วัน)`;
   }
 
   return {
@@ -365,12 +366,30 @@ function update7SegmentRack(rackEl, pct, currentDayIndex) {
       cell.classList.remove('has-usage');
     }
 
+    // Check if usage has overshot beyond today's allowance
+    const isOverBudget = (dayNumber > currentDayIndex) && (fillPct > 0);
+    if (isOverBudget) {
+      cell.classList.add('is-over-budget');
+    } else {
+      cell.classList.remove('is-over-budget');
+    }
+
+    let pointerEl = cell.querySelector('.today-pointer');
     if (dayNumber === currentDayIndex) {
       cell.classList.add('is-today');
-      cell.title = `วันที่ ${dayNumber} ของรอบ (วันนี้) - ใช้โควตาวันนี้ไป ${fillPct}%`;
+      cell.title = `วันที่ ${dayNumber} ของรอบ (วันนี้) - โควตาส่วนนี้ใช้ไป ${fillPct}%`;
+      if (!pointerEl) {
+        pointerEl = document.createElement('span');
+        pointerEl.className = 'today-pointer';
+        pointerEl.textContent = '▼ วันนี้';
+        cell.appendChild(pointerEl);
+      }
     } else {
       cell.classList.remove('is-today');
-      cell.title = `วันที่ ${dayNumber} ของรอบ - ใช้โควตาช่องนี้ไป ${fillPct}%`;
+      cell.title = `วันที่ ${dayNumber} ของรอบ - ใช้โควตาส่วนนี้ไป ${fillPct}%`;
+      if (pointerEl) {
+        pointerEl.remove();
+      }
     }
   });
 }
