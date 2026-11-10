@@ -132,7 +132,7 @@ async function fetchWithTimeout(resource, options = {}) {
   }
 }
 
-function toValidEpochMs(value, now = Date.now()) {
+function parseEpochMs(value) {
   if (value === null || value === undefined || value === '') return null;
   let ms = null;
   if (typeof value === 'number') {
@@ -146,29 +146,38 @@ function toValidEpochMs(value, now = Date.now()) {
       if (Number.isFinite(parsed)) ms = parsed;
     }
   }
-  if (!ms || !Number.isFinite(ms) || ms <= now) return null;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function toValidEpochMs(value, now = Date.now()) {
+  const ms = parseEpochMs(value);
+  if (!ms || ms <= now) return null;
   return ms;
 }
 
 function formatShortReset(epochMs, now = Date.now()) {
-  if (!epochMs || epochMs <= now) return null;
+  if (!epochMs) return null;
+  if (epochMs <= now) return 'รีเซ็ตแล้ว (พร้อมใช้งาน)';
   const totalSec = Math.max(0, Math.floor((epochMs - now) / 1000));
   const hrs = Math.floor(totalSec / 3600);
   const mins = Math.floor((totalSec % 3600) / 60);
   const timeStr = new Date(epochMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const durStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
-  return `${durStr} (${timeStr})`;
+  return `ในอีก ${durStr} (${timeStr})`;
 }
 
 function formatWeeklyReset(epochMs, now = Date.now()) {
-  if (!epochMs || epochMs <= now) return null;
+  if (!epochMs) return null;
+  if (epochMs <= now) return 'รีเซ็ตแล้ว';
   const totalSec = Math.max(0, Math.floor((epochMs - now) / 1000));
   const days = Math.floor(totalSec / 86400);
   const hrs = Math.floor((totalSec % 86400) / 3600);
   const mins = Math.floor((totalSec % 3600) / 60);
-  const dateStr = new Date(epochMs).toLocaleDateString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+  const d = new Date(epochMs);
+  const dayStr = d.toLocaleDateString([], { weekday: 'short' });
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const durStr = days > 0 ? `${days}d ${hrs}h` : (hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`);
-  return `${durStr} (${dateStr})`;
+  return `ในอีก ${durStr} (${dayStr} ${timeStr})`;
 }
 
 function buildUsageResult(fiveHourPct, fiveHourEpoch, weeklyPct, weeklyEpoch, forceExhausted = false, now = Date.now()) {
@@ -408,11 +417,16 @@ function parseAntigravityGroups(groups, now = Date.now()) {
 
     for (const b of buckets) {
       const fraction = typeof b.remainingFraction === 'number' ? b.remainingFraction : 1;
-      const pct = Math.min(100, Math.max(0, Math.round((1 - fraction) * 100)));
-      const resetMs = toValidEpochMs(b.resetTime, now);
+      let pct = Math.min(100, Math.max(0, Math.round((1 - fraction) * 100)));
+      const resetMs = parseEpochMs(b.resetTime);
 
       const is5h = b.window === '5h' || (b.bucketId && b.bucketId.includes('5h')) || (b.displayName && b.displayName.toLowerCase().includes('five hour'));
       const label = b.displayName || (is5h ? '5-Hour Limit' : 'Weekly Limit');
+
+      // If a rolling 5-hour limit resetTime has passed, it has refreshed back to 0%!
+      if (is5h && resetMs && resetMs <= now) {
+        pct = 0;
+      }
 
       const resetText = is5h ? formatShortReset(resetMs, now) : formatWeeklyReset(resetMs, now);
 
@@ -441,7 +455,7 @@ function parseAntigravityGroups(groups, now = Date.now()) {
         label,
         pct,
         resetEpoch: resetMs,
-        resetText: resetText ? `in ${resetText}` : '-'
+        resetText: resetText || '-'
       });
     }
 
@@ -486,33 +500,35 @@ async function probeAntigravityPort(p, timeoutMs = 250) {
 async function discoverAntigravityLocalServer(hintPort) {
   const priorityPorts = [...new Set([
     Number(hintPort) || 0,
-    62937, 63071, 63069, 63070, 62936, 62938, 62935, 63072, 63073, 63074, 63075
+    64633, 62937, 63071, 63069, 63070, 64632, 61616, 61615, 62936, 62938, 62935, 63072, 63073, 63074, 63075
   ])].filter((p) => p > 0);
 
   // 1. Check priority ports first
   for (const p of priorityPorts) {
-    const found = await probeAntigravityPort(p, 180);
+    const found = await probeAntigravityPort(p, 150);
     if (found && found.token) return found;
   }
 
-  // 2. Scan window 62850 - 63200 in parallel batches of 30
-  const range1 = [];
-  for (let p = 62850; p <= 63200; p++) {
-    if (!priorityPorts.includes(p)) range1.push(p);
-  }
-  for (let i = 0; i < range1.length; i += 30) {
-    const batch = range1.slice(i, i + 30);
-    const results = await Promise.all(batch.map((p) => probeAntigravityPort(p, 220)));
+  // 2. Scan backwards from 65535 down to 60000 in parallel chunks of 100
+  for (let p = 65535; p >= 60000; p -= 100) {
+    const batch = [];
+    const limit = Math.max(p - 99, 60000);
+    for (let cur = p; cur >= limit; cur--) {
+      if (!priorityPorts.includes(cur)) batch.push(probeAntigravityPort(cur, 120));
+    }
+    const results = await Promise.all(batch);
     const hit = results.find((r) => r && r.token);
     if (hit) return hit;
   }
 
-  // 3. Scan secondary window 63201 - 63500
-  const range2 = [];
-  for (let p = 63201; p <= 63500; p++) range2.push(p);
-  for (let i = 0; i < range2.length; i += 30) {
-    const batch = range2.slice(i, i + 30);
-    const results = await Promise.all(batch.map((p) => probeAntigravityPort(p, 220)));
+  // 3. Scan secondary ephemeral range 59999 down to 49152
+  for (let p = 59999; p >= 49152; p -= 120) {
+    const batch = [];
+    const limit = Math.max(p - 119, 49152);
+    for (let cur = p; cur >= limit; cur--) {
+      batch.push(probeAntigravityPort(cur, 100));
+    }
+    const results = await Promise.all(batch);
     const hit = results.find((r) => r && r.token);
     if (hit) return hit;
   }
@@ -946,11 +962,30 @@ async function getGeminiUsage() {
       if (Array.isArray(storage.lastAntigravityPools) && storage.lastAntigravityPools.length > 0) {
         const ageMs = Date.now() - (storage.lastAntigravityTimestamp || 0);
         if (ageMs < 48 * 3600 * 1000) {
+          const now = Date.now();
+          const refreshedPools = storage.lastAntigravityPools.map((pool) => ({
+            ...pool,
+            metrics: (pool.metrics || []).map((m) => {
+              const is5h = (m.label && /5-hour|five hour/i.test(m.label)) || (m.id && /5h/i.test(m.id));
+              const resetMs = parseEpochMs(m.resetEpoch);
+              let pct = m.pct;
+              if (is5h && resetMs && resetMs <= now) {
+                pct = 0;
+              }
+              return {
+                ...m,
+                pct,
+                resetEpoch: resetMs,
+                resetText: is5h ? formatShortReset(resetMs, now) : formatWeeklyReset(resetMs, now)
+              };
+            })
+          }));
+
           return {
-            pools: storage.lastAntigravityPools,
+            pools: refreshedPools,
             source: 'antigravity',
             isCached: true,
-            cachedTimestamp: storage.lastAntigravityTimestamp || Date.now()
+            cachedTimestamp: storage.lastAntigravityTimestamp || now
           };
         }
       }

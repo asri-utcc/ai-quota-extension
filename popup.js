@@ -287,6 +287,30 @@ function formatCountdown(targetEpochMs) {
   return `${hStr}h ${mStr}m ${sStr}s`;
 }
 
+function formatMetricResetTime(resetEpoch, is5h = false, now = Date.now()) {
+  if (!resetEpoch || !Number.isFinite(resetEpoch)) return '-';
+  const diffMs = resetEpoch - now;
+  if (diffMs <= 0) {
+    return is5h ? 'รีเซ็ตแล้ว (พร้อมใช้งาน)' : 'รีเซ็ตแล้ว';
+  }
+
+  const totalSec = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hrs = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+
+  const d = new Date(resetEpoch);
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (days > 0) {
+    const dayStr = d.toLocaleDateString([], { weekday: 'short' });
+    return `ในอีก ${days}d ${hrs}h (${dayStr} ${timeStr})`;
+  }
+
+  const durStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+  return `ในอีก ${durStr} (${timeStr})`;
+}
+
 function updateLiveCountdowns() {
   for (const [provider, prefix] of Object.entries(PROVIDER_PREFIX)) {
     const target = targetResetTimes[provider];
@@ -295,6 +319,15 @@ function updateLiveCountdowns() {
       if (el) el.textContent = formatCountdown(target);
     }
   }
+
+  // Update dynamic pool reset countdowns
+  document.querySelectorAll('.pool-reset-txt').forEach((el) => {
+    const epoch = Number(el.dataset.resetEpoch);
+    const is5h = el.dataset.is5h === 'true';
+    if (epoch && Number.isFinite(epoch)) {
+      el.textContent = 'รีเซ็ต: ' + formatMetricResetTime(epoch, is5h);
+    }
+  });
 }
 
 // ============================================================================
@@ -576,23 +609,28 @@ function renderGeminiPools(pools) {
     }
 
     for (const metric of pool.metrics || []) {
-      const safePct = Math.min(100, Math.max(0, Math.round(metric.pct || 0)));
       const isWeekly = (metric.label && /week|7-day|7 day/i.test(metric.label)) ||
                        (metric.id && /week|7-day/i.test(metric.id)) ||
                        (metric.resetEpoch && (metric.resetEpoch - Date.now() > 24 * 3600 * 1000));
+
+      const isExpired = metric.resetEpoch ? (metric.resetEpoch <= Date.now()) : false;
+      const rawPct = Math.min(100, Math.max(0, Math.round(metric.pct || 0)));
+      // If rolling 5-hour limit has expired, quota has fully refreshed to 0%
+      const effectivePct = (!isWeekly && isExpired) ? 0 : rawPct;
+      const resetDisplayStr = formatMetricResetTime(metric.resetEpoch, !isWeekly);
 
       const metricDiv = document.createElement('div');
       metricDiv.className = isWeekly ? 'metric weekly-metric' : 'metric';
 
       if (isWeekly) {
         // Render 7-Segment Rack with 3-Level Warning Indicator
-        const pace = calculateWeeklyPace(safePct, metric.resetEpoch);
+        const pace = calculateWeeklyPace(effectivePct, metric.resetEpoch);
 
         metricDiv.innerHTML = `
           <div class="metric-info">
             <span class="metric-name">${metric.label}</span>
             <div class="metric-val-wrap">
-              <span class="metric-val">${safePct}%</span>
+              <span class="metric-val">${effectivePct}%</span>
               <span class="pace-badge ${pace.levelClass}">${pace.badgeLabel}</span>
             </div>
           </div>
@@ -600,11 +638,13 @@ function renderGeminiPools(pools) {
 
         const rack = createWeeklyRackElement();
         metricDiv.appendChild(rack);
-        update7SegmentRack(rack, safePct, pace.currentDayIndex);
+        update7SegmentRack(rack, effectivePct, pace.currentDayIndex);
 
         const resetDiv = document.createElement('div');
-        resetDiv.className = 'reset-txt';
-        resetDiv.textContent = metric.resetText ? `รีเซ็ต: ${metric.resetText}` : 'รีเซ็ต: -';
+        resetDiv.className = 'reset-txt pool-reset-txt';
+        resetDiv.dataset.resetEpoch = String(metric.resetEpoch || '');
+        resetDiv.dataset.is5h = 'false';
+        resetDiv.textContent = `รีเซ็ต: ${resetDisplayStr}`;
         metricDiv.appendChild(resetDiv);
 
         const summaryDiv = document.createElement('div');
@@ -613,16 +653,16 @@ function renderGeminiPools(pools) {
         metricDiv.appendChild(summaryDiv);
       } else {
         // Render continuous gauge bar
-        const color = getBarColor(safePct);
+        const color = getBarColor(effectivePct);
         metricDiv.innerHTML = `
           <div class="metric-info">
             <span class="metric-name">${metric.label}</span>
-            <span class="metric-val">${safePct}%</span>
+            <span class="metric-val">${effectivePct}%</span>
           </div>
           <div class="bar-bg">
-            <div class="bar-fill" style="width: ${safePct}%; background-color: ${color};"></div>
+            <div class="bar-fill" style="width: ${effectivePct}%; background-color: ${color};"></div>
           </div>
-          <div class="reset-txt">รีเซ็ต: ${metric.resetText || '-'}</div>
+          <div class="reset-txt pool-reset-txt" data-reset-epoch="${metric.resetEpoch || ''}" data-is-5h="true">รีเซ็ต: ${resetDisplayStr}</div>
         `;
       }
 
@@ -673,7 +713,13 @@ function renderProviderCard(provider, data, okLabel = 'Connected') {
     const srcTag = document.getElementById('gm-source-tag');
     if (srcTag) {
       if (data.source === 'antigravity' || data.source === 'antigravity_cloud') {
-        srcTag.textContent = data.isCached ? 'Antigravity (แคชล่าสุด)' : 'Antigravity IDE';
+        if (data.isCached) {
+          const cacheAgeMin = Math.max(1, Math.round((Date.now() - (data.cachedTimestamp || Date.now())) / 60000));
+          const ageStr = cacheAgeMin >= 60 ? `${Math.floor(cacheAgeMin / 60)} ชม.ก่อน` : `${cacheAgeMin} นาทีก่อน`;
+          srcTag.textContent = `Antigravity (แคช ${ageStr})`;
+        } else {
+          srcTag.textContent = 'Antigravity IDE';
+        }
       } else {
         srcTag.textContent = 'Gemini Web';
       }
