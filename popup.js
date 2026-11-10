@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnToggleSettings = document.getElementById('btn-toggle-settings');
   const btnSaveKey = document.getElementById('btn-save-key');
 
+  const selectTheme = document.getElementById('theme-select');
   const toggleClaude = document.getElementById('toggle-claude');
   const toggleGemini = document.getElementById('toggle-gemini');
   const toggleMinimax = document.getElementById('toggle-minimax');
@@ -91,8 +92,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function applyTheme(themeName) {
+    const isMinimal = themeName === 'minimal';
+    document.body.classList.toggle('theme-minimal', isMinimal);
+    if (selectTheme) selectTheme.value = isMinimal ? 'minimal' : 'default';
+  }
+
   // Load saved preferences
   chrome.storage.local.get([
+    'theme',
     'showClaude',
     'showGemini',
     'showMinimax',
@@ -107,6 +115,8 @@ document.addEventListener('DOMContentLoaded', () => {
     'minimaxHost',
     'codexAccessToken'
   ], (res) => {
+    applyTheme(res.theme || 'default');
+
     const showClaude = res.showClaude !== false;
     const showGemini = res.showGemini !== false;
     const showMinimax = res.showMinimax !== false;
@@ -181,9 +191,19 @@ document.addEventListener('DOMContentLoaded', () => {
   setupToggle(toggleMinimax, 'minimax');
   setupToggle(toggleCodex, 'codex');
 
+  // Real-time Theme Switcher Listener
+  if (selectTheme) {
+    selectTheme.addEventListener('change', () => {
+      const chosenTheme = selectTheme.value;
+      applyTheme(chosenTheme);
+      chrome.storage.local.set({ theme: chosenTheme });
+    });
+  }
+
   if (btnSaveKey) {
     btnSaveKey.addEventListener('click', () => {
       chrome.storage.local.set({
+        theme: selectTheme ? selectTheme.value : 'default',
         showClaude: toggleClaude ? toggleClaude.checked : true,
         showGemini: toggleGemini ? toggleGemini.checked : true,
         showMinimax: toggleMinimax ? toggleMinimax.checked : true,
