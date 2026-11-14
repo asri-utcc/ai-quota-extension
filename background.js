@@ -9,8 +9,8 @@ const GEMINI_TOKENS_TTL_MS = 20 * 60 * 1000;
 // Google Cloud Code / Antigravity OAuth constants (optional)
 const GOOGLE_CLIENT_ID = '';
 const GOOGLE_CLIENT_SECRET = '';
-const DEFAULT_ANTIGRAVITY_PORT = 63071;
-const DEFAULT_ANTIGRAVITY_CSRF = '322de770-01f9-4ce2-b342-a8240b626194';
+const DEFAULT_ANTIGRAVITY_PORT = 49496;
+const DEFAULT_ANTIGRAVITY_CSRF = '71e79591-57cd-4c72-9eb4-9638a943f310';
 const DEFAULT_ANTIGRAVITY_REFRESH_TOKEN = '';
 
 let geminiReqSeq = Math.floor(Math.random() * 9000) + 1000;
@@ -63,15 +63,32 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     if (request.action === 'AUTODETECT_ANTIGRAVITY') {
       (async () => {
         try {
-          const storage = await chrome.storage.local.get(['antigravityPort']);
+          // Check local bridge first (instant: ~2ms)
+          try {
+            const bridgeRes = await fetchWithTimeout('http://127.0.0.1:49111/info', { timeout: 300 });
+            if (bridgeRes.ok) {
+              const bInfo = await bridgeRes.json();
+              if (bInfo && bInfo.httpPort && bInfo.csrfToken) {
+                await chrome.storage.local.set({
+                  antigravityPort: String(bInfo.httpPort),
+                  antigravityCsrf: bInfo.csrfToken
+                });
+                sendResponse({ success: true, port: bInfo.httpPort, token: bInfo.csrfToken, source: 'bridge' });
+                return;
+              }
+            }
+          } catch (_) {}
+
+          const storage = await chrome.storage.local.get(['antigravityPort', 'antigravityCsrf']);
           const hint = Number(storage.antigravityPort) || DEFAULT_ANTIGRAVITY_PORT;
           const discovered = await discoverAntigravityLocalServer(hint);
-          if (discovered && discovered.token) {
+          if (discovered) {
+            const token = discovered.token || storage.antigravityCsrf || DEFAULT_ANTIGRAVITY_CSRF;
             await chrome.storage.local.set({
               antigravityPort: String(discovered.port),
-              antigravityCsrf: discovered.token
+              antigravityCsrf: token
             });
-            sendResponse({ success: true, port: discovered.port, token: discovered.token });
+            sendResponse({ success: true, port: discovered.port, token });
           } else {
             sendResponse({ success: false, error: 'NOT_FOUND' });
           }
@@ -487,11 +504,9 @@ async function probeAntigravityPort(p, timeoutMs = 250) {
     const res = await fetchWithTimeout(`http://127.0.0.1:${p}/`, { timeout: timeoutMs });
     if (!res.ok && res.status !== 200) return null;
     const html = await res.text();
-    if (html && (html.includes('csrfToken') || html.includes('__APP_CONFIG__'))) {
+    if (html && (html.includes('csrfToken') || html.includes('__APP_CONFIG__') || html.includes('"productName":"antigravity"'))) {
       const m = html.match(/"csrfToken"\s*:\s*"([^"]+)"/);
-      if (m && m[1]) {
-        return { port: p, token: m[1] };
-      }
+      return { port: p, token: (m && m[1]) ? m[1] : null };
     }
   } catch (_) {}
   return null;
@@ -500,38 +515,40 @@ async function probeAntigravityPort(p, timeoutMs = 250) {
 async function discoverAntigravityLocalServer(hintPort) {
   const priorityPorts = [...new Set([
     Number(hintPort) || 0,
-    64633, 62937, 63071, 63069, 63070, 64632, 61616, 61615, 62936, 62938, 62935, 63072, 63073, 63074, 63075
+    49496, 64633, 56739, 62937, 63071, 63069, 63070, 49495, 49494, 64030, 52249, 52247, 52246, 64632, 61616, 61615, 62936, 62938, 62935, 63072, 63073, 63074, 63075
   ])].filter((p) => p > 0);
 
-  // 1. Check priority ports first
+  // 1. Check priority ports first (instant: 1-10ms)
   for (const p of priorityPorts) {
-    const found = await probeAntigravityPort(p, 150);
+    const found = await probeAntigravityPort(p, 100);
     if (found && found.token) return found;
   }
 
-  // 2. Scan backwards from 65535 down to 60000 in parallel chunks of 100
-  for (let p = 65535; p >= 60000; p -= 100) {
-    const batch = [];
-    const limit = Math.max(p - 99, 60000);
-    for (let cur = p; cur >= limit; cur--) {
-      if (!priorityPorts.includes(cur)) batch.push(probeAntigravityPort(cur, 120));
+  const scanRange = async (from, to, step = 100) => {
+    for (let p = from; p <= to; p += step) {
+      const batch = [];
+      const limit = Math.min(p + step - 1, to);
+      for (let cur = p; cur <= limit; cur++) {
+        if (!priorityPorts.includes(cur)) batch.push(probeAntigravityPort(cur, 80));
+      }
+      const results = await Promise.all(batch);
+      const hit = results.find((r) => r && r.token);
+      if (hit) return hit;
     }
-    const results = await Promise.all(batch);
-    const hit = results.find((r) => r && r.token);
-    if (hit) return hit;
-  }
+    return null;
+  };
 
-  // 3. Scan secondary ephemeral range 59999 down to 49152
-  for (let p = 59999; p >= 49152; p -= 120) {
-    const batch = [];
-    const limit = Math.max(p - 119, 49152);
-    for (let cur = p; cur >= limit; cur--) {
-      batch.push(probeAntigravityPort(cur, 100));
-    }
-    const results = await Promise.all(batch);
-    const hit = results.find((r) => r && r.token);
-    if (hit) return hit;
-  }
+  // 2. Scan Windows start dynamic range (49152 - 52000) - where Windows assigns new dynamic ports on boot/start! (<180ms)
+  const hit1 = await scanRange(49152, 52000, 100);
+  if (hit1) return hit1;
+
+  // 3. Scan Windows high dynamic range (62000 - 65535) (<350ms)
+  const hit2 = await scanRange(62000, 65535, 100);
+  if (hit2) return hit2;
+
+  // 4. Scan mid range (52001 - 61999)
+  const hit3 = await scanRange(52001, 61999, 120);
+  if (hit3) return hit3;
 
   return null;
 }
@@ -563,8 +580,25 @@ async function callAntigravityQuotaRpc(port, token) {
 }
 
 async function getAntigravityLocalUsage(port = DEFAULT_ANTIGRAVITY_PORT, csrfToken = DEFAULT_ANTIGRAVITY_CSRF) {
+  // Step 0: Try local bridge if active on fixed port 49111 (instant: ~2ms)
+  try {
+    const bridgeRes = await fetchWithTimeout('http://127.0.0.1:49111/info', { timeout: 300 });
+    if (bridgeRes.ok) {
+      const bInfo = await bridgeRes.json();
+      if (bInfo && bInfo.httpPort && bInfo.csrfToken) {
+        if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+          chrome.storage.local.set({
+            antigravityPort: String(bInfo.httpPort),
+            antigravityCsrf: bInfo.csrfToken
+          }).catch(() => {});
+        }
+        return await callAntigravityQuotaRpc(bInfo.httpPort, bInfo.csrfToken);
+      }
+    }
+  } catch (_) {}
+
   const initialPort = Number(port) || DEFAULT_ANTIGRAVITY_PORT;
-  const initialToken = (csrfToken || '').trim();
+  const initialToken = (csrfToken || DEFAULT_ANTIGRAVITY_CSRF).trim();
 
   // Attempt 1: Try current configured port and token
   if (initialToken) {
@@ -575,17 +609,18 @@ async function getAntigravityLocalUsage(port = DEFAULT_ANTIGRAVITY_PORT, csrfTok
 
   // Attempt 2: Auto-discover active Antigravity port and token dynamically
   const discovered = await discoverAntigravityLocalServer(initialPort);
-  if (discovered && discovered.token) {
+  if (discovered) {
+    const useToken = discovered.token || initialToken || DEFAULT_ANTIGRAVITY_CSRF;
     // Persist discovered credentials so next request is instant
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       chrome.storage.local.set({
         antigravityPort: String(discovered.port),
-        antigravityCsrf: discovered.token
+        ...(discovered.token ? { antigravityCsrf: discovered.token } : {})
       }).catch(() => {});
     }
 
     try {
-      return await callAntigravityQuotaRpc(discovered.port, discovered.token);
+      return await callAntigravityQuotaRpc(discovered.port, useToken);
     } catch (_) {}
   }
 
@@ -957,11 +992,11 @@ async function getGeminiUsage() {
         } catch (_) {}
       }
 
-      // Resilient Cache: If Antigravity was running recently (within 48 hours),
+      // Resilient Cache: If Antigravity was running recently (within 30 days),
       // DO NOT erase the pools to 0%! Return cached pools with isCached flag
       if (Array.isArray(storage.lastAntigravityPools) && storage.lastAntigravityPools.length > 0) {
         const ageMs = Date.now() - (storage.lastAntigravityTimestamp || 0);
-        if (ageMs < 48 * 3600 * 1000) {
+        if (ageMs < 30 * 86400 * 1000) {
           const now = Date.now();
           const refreshedPools = storage.lastAntigravityPools.map((pool) => ({
             ...pool,

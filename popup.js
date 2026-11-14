@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyProviderVisibility('codex', showCodex);
 
     if (selectGmSourceMode) selectGmSourceMode.value = res.geminiSourceMode || 'auto';
-    if (inputAgPort) inputAgPort.value = res.antigravityPort || '63071';
+    if (inputAgPort) inputAgPort.value = res.antigravityPort || '49496';
     if (inputAgCsrf) inputAgCsrf.value = res.antigravityCsrf || '';
     if (inputAgRefresh) inputAgRefresh.value = res.antigravityRefreshToken || '';
     if (res.geminiAccountIndex !== undefined && inputGmAccount) {
@@ -209,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showMinimax: toggleMinimax ? toggleMinimax.checked : true,
         showCodex: toggleCodex ? toggleCodex.checked : true,
         geminiSourceMode: selectGmSourceMode ? selectGmSourceMode.value : 'auto',
-        antigravityPort: inputAgPort ? inputAgPort.value.trim() : '63071',
+        antigravityPort: inputAgPort ? inputAgPort.value.trim() : '49496',
         antigravityCsrf: inputAgCsrf ? inputAgCsrf.value.trim() : '',
         antigravityRefreshToken: inputAgRefresh ? inputAgRefresh.value.trim() : '',
         geminiAccountIndex: inputGmAccount ? inputGmAccount.value.trim() : '',
