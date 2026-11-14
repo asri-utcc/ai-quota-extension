@@ -311,7 +311,7 @@ function formatMetricResetTime(resetEpoch, is5h = false, now = Date.now()) {
   if (!resetEpoch || !Number.isFinite(resetEpoch)) return '-';
   const diffMs = resetEpoch - now;
   if (diffMs <= 0) {
-    return is5h ? 'รีเซ็ตแล้ว (พร้อมใช้งาน)' : 'รีเซ็ตแล้ว';
+    return 'พร้อมใช้งาน (Reset แล้ว)';
   }
 
   const totalSec = Math.floor(diffMs / 1000);
@@ -336,7 +336,32 @@ function updateLiveCountdowns() {
     const target = targetResetTimes[provider];
     if (target) {
       const el = document.getElementById(`${prefix}-countdown-timer`);
+      const box = document.getElementById(`${prefix}-countdown-box`);
+      const label = document.getElementById(`${prefix}-countdown-label`);
+      const badge = document.getElementById(`${prefix}-badge`);
+      const card = document.getElementById(`card-${provider}`);
+      const isReady = (target - Date.now()) <= 0;
+
       if (el) el.textContent = formatCountdown(target);
+
+      if (isReady) {
+        if (box) {
+          box.classList.add('ready');
+          box.classList.add('active');
+        }
+        if (label) {
+          label.textContent = '✓ โควตารีเซ็ตแล้ว (พร้อมใช้งาน)';
+        }
+        if (badge && badge.classList.contains('exhausted')) {
+          badge.textContent = 'พร้อมใช้งาน (Reset แล้ว)';
+          badge.className = 'badge active';
+        }
+        if (card) {
+          card.classList.remove('limit-hit');
+        }
+      } else {
+        if (box) box.classList.remove('ready');
+      }
     }
   }
 
@@ -345,7 +370,13 @@ function updateLiveCountdowns() {
     const epoch = Number(el.dataset.resetEpoch);
     const is5h = el.dataset.is5h === 'true';
     if (epoch && Number.isFinite(epoch)) {
+      const isReady = (epoch - Date.now()) <= 0;
       el.textContent = 'รีเซ็ต: ' + formatMetricResetTime(epoch, is5h);
+      if (isReady) {
+        el.classList.add('ready');
+      } else {
+        el.classList.remove('ready');
+      }
     }
   });
 }
@@ -495,7 +526,18 @@ function updateWeeklyMetric(txtEl, paceBadgeEl, rackEl, resetEl, summaryEl, pct,
   }
 
   if (resetEl) {
-    resetEl.textContent = resetStr ? `Reset: ${resetStr}` : 'Reset: -';
+    if (resetStr) {
+      const isReady = (resetEpoch && resetEpoch <= Date.now()) || resetStr.includes('พร้อมใช้งาน') || resetStr.includes('Reset แล้ว') || resetStr.includes('รีเซ็ตแล้ว');
+      resetEl.textContent = resetStr.startsWith('Reset:') || resetStr.startsWith('รีเซ็ต:') ? resetStr : `Reset: ${resetStr}`;
+      if (isReady) {
+        resetEl.classList.add('ready');
+      } else {
+        resetEl.classList.remove('ready');
+      }
+    } else {
+      resetEl.textContent = 'Reset: -';
+      resetEl.classList.remove('ready');
+    }
   }
 
   if (summaryEl) {
@@ -511,7 +553,18 @@ function updateMetric(txtEl, barEl, resetEl, pct, resetStr) {
   txtEl.textContent = `${safePct}%`;
   barEl.style.width = `${safePct}%`;
   barEl.style.backgroundColor = getBarColor(safePct);
-  resetEl.textContent = resetStr ? `Reset: ${resetStr}` : 'Reset: -';
+  if (resetStr) {
+    const isReady = resetStr.includes('พร้อมใช้งาน') || resetStr.includes('Reset แล้ว') || resetStr.includes('รีเซ็ตแล้ว');
+    resetEl.textContent = resetStr.startsWith('Reset:') || resetStr.startsWith('รีเซ็ต:') ? resetStr : `Reset: ${resetStr}`;
+    if (isReady) {
+      resetEl.classList.add('ready');
+    } else {
+      resetEl.classList.remove('ready');
+    }
+  } else {
+    resetEl.textContent = 'Reset: -';
+    resetEl.classList.remove('ready');
+  }
 }
 
 function clearMetrics(prefix) {
@@ -527,7 +580,10 @@ function clearMetrics(prefix) {
 
   if (txt5h) txt5h.textContent = '-%';
   if (bar5h) bar5h.style.width = '0%';
-  if (rst5h) rst5h.textContent = 'Reset: -';
+  if (rst5h) {
+    rst5h.textContent = 'Reset: -';
+    rst5h.classList.remove('ready');
+  }
 
   if (txtWk) txtWk.textContent = '-%';
   if (paceBadge) {
@@ -535,7 +591,10 @@ function clearMetrics(prefix) {
     paceBadge.textContent = '● ปกติ (On Pace)';
   }
   if (rackWk) update7SegmentRack(rackWk, 0, 1);
-  if (rstWk) rstWk.textContent = 'Reset: -';
+  if (rstWk) {
+    rstWk.textContent = 'Reset: -';
+    rstWk.classList.remove('ready');
+  }
   if (summaryWk) {
     summaryWk.className = 'pace-summary';
     summaryWk.textContent = 'พร้อมคำนวณรอบสัปดาห์...';
@@ -559,27 +618,54 @@ function applyExhaustedState(provider, isExhausted, targetEpochMs, exhaustedWind
   const badge = document.getElementById(`${prefix}-badge`);
 
   if (isExhausted) {
-    if (card) card.classList.add('limit-hit');
-    if (badge) {
-      badge.textContent = '100% EXHAUSTED';
-      badge.className = 'badge exhausted';
-    }
-    if (label) {
-      label.textContent = exhaustedWindow === 'WEEKLY'
-        ? '⏳ WEEKLY LIMIT EXHAUSTED - RESETS IN'
-        : '⏳ LIMIT EXHAUSTED - RESETS IN';
-    }
-    if (targetEpochMs && targetEpochMs > Date.now()) {
+    if (targetEpochMs && targetEpochMs <= Date.now()) {
       targetResetTimes[provider] = targetEpochMs;
-      if (box) box.classList.add('active');
+      if (card) card.classList.remove('limit-hit');
+      if (badge) {
+        badge.textContent = 'พร้อมใช้งาน (Reset แล้ว)';
+        badge.className = 'badge active';
+      }
+      if (box) {
+        box.classList.add('ready');
+        box.classList.add('active');
+      }
+      if (label) {
+        label.textContent = '✓ โควตารีเซ็ตแล้ว (พร้อมใช้งาน)';
+      }
+      const timerEl = document.getElementById(`${prefix}-countdown-timer`);
+      if (timerEl) timerEl.textContent = 'พร้อมใช้งาน (Reset แล้ว)';
     } else {
-      targetResetTimes[provider] = null;
-      if (box) box.classList.remove('active');
+      if (card) card.classList.add('limit-hit');
+      if (badge) {
+        badge.textContent = '100% EXHAUSTED';
+        badge.className = 'badge exhausted';
+      }
+      if (label) {
+        label.textContent = exhaustedWindow === 'WEEKLY'
+          ? '⏳ WEEKLY LIMIT EXHAUSTED - RESETS IN'
+          : '⏳ LIMIT EXHAUSTED - RESETS IN';
+      }
+      if (targetEpochMs && targetEpochMs > Date.now()) {
+        targetResetTimes[provider] = targetEpochMs;
+        if (box) {
+          box.classList.remove('ready');
+          box.classList.add('active');
+        }
+      } else {
+        targetResetTimes[provider] = null;
+        if (box) {
+          box.classList.remove('ready');
+          box.classList.remove('active');
+        }
+      }
     }
   } else {
     targetResetTimes[provider] = null;
     if (card) card.classList.remove('limit-hit');
-    if (box) box.classList.remove('active');
+    if (box) {
+      box.classList.remove('ready');
+      box.classList.remove('active');
+    }
   }
 }
 
@@ -660,8 +746,9 @@ function renderGeminiPools(pools) {
         metricDiv.appendChild(rack);
         update7SegmentRack(rack, effectivePct, pace.currentDayIndex);
 
+        const isResetReady = isExpired || resetDisplayStr.includes('พร้อมใช้งาน') || resetDisplayStr.includes('Reset แล้ว');
         const resetDiv = document.createElement('div');
-        resetDiv.className = 'reset-txt pool-reset-txt';
+        resetDiv.className = isResetReady ? 'reset-txt pool-reset-txt ready' : 'reset-txt pool-reset-txt';
         resetDiv.dataset.resetEpoch = String(metric.resetEpoch || '');
         resetDiv.dataset.is5h = 'false';
         resetDiv.textContent = `รีเซ็ต: ${resetDisplayStr}`;
@@ -674,6 +761,8 @@ function renderGeminiPools(pools) {
       } else {
         // Render continuous gauge bar
         const color = getBarColor(effectivePct);
+        const isResetReady = isExpired || resetDisplayStr.includes('พร้อมใช้งาน') || resetDisplayStr.includes('Reset แล้ว');
+        const readyClass = isResetReady ? ' ready' : '';
         metricDiv.innerHTML = `
           <div class="metric-info">
             <span class="metric-name">${metric.label}</span>
@@ -682,7 +771,7 @@ function renderGeminiPools(pools) {
           <div class="bar-bg">
             <div class="bar-fill" style="width: ${effectivePct}%; background-color: ${color};"></div>
           </div>
-          <div class="reset-txt pool-reset-txt" data-reset-epoch="${metric.resetEpoch || ''}" data-is-5h="true">รีเซ็ต: ${resetDisplayStr}</div>
+          <div class="reset-txt pool-reset-txt${readyClass}" data-reset-epoch="${metric.resetEpoch || ''}" data-is-5h="true">รีเซ็ต: ${resetDisplayStr}</div>
         `;
       }
 
@@ -759,13 +848,21 @@ function renderProviderCard(provider, data, okLabel = 'Connected') {
     if (defMetrics) defMetrics.style.display = 'block';
   }
 
+  const formatResetParam = (txt) => {
+    if (!txt) return '-';
+    if (txt.includes('พร้อมใช้งาน') || txt.includes('Reset แล้ว') || txt.includes('รีเซ็ตแล้ว')) {
+      return txt;
+    }
+    return txt.startsWith('ในอีก') ? txt : `ในอีก ${txt}`;
+  };
+
   // 1. Continuous 5-Hour rolling bar
   updateMetric(
     document.getElementById(`${prefix}-5h-txt`),
     document.getElementById(`${prefix}-5h-bar`),
     document.getElementById(`${prefix}-5h-reset`),
     data.fiveHour,
-    data.fiveHourResetText ? `ในอีก ${data.fiveHourResetText}` : '-'
+    formatResetParam(data.fiveHourResetText)
   );
 
   // 2. Weekly Limit with 7-Segment Rack and 3-Level Warning Indicator
@@ -777,7 +874,7 @@ function renderProviderCard(provider, data, okLabel = 'Connected') {
     document.getElementById(`${prefix}-wk-summary`),
     data.weekly,
     data.weeklyResetEpoch,
-    data.weeklyResetText ? `ในอีก ${data.weeklyResetText}` : '-'
+    formatResetParam(data.weeklyResetText)
   );
 }
 

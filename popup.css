@@ -489,6 +489,11 @@ body.is-sidepanel {
   margin-top: 4px;
 }
 
+.reset-txt.ready {
+  color: var(--status-ok) !important;
+  font-weight: 600;
+}
+
 /* ============================================================================
    7-SEGMENT DAILY WEEKLY RACK (MINIMAL & CLEAR)
    ============================================================================ */
@@ -704,10 +709,17 @@ body.is-sidepanel {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.4);
   text-align: center;
+  transition: all 0.3s ease;
 }
 
 .big-countdown-box.active {
   display: block;
+}
+
+.big-countdown-box.ready {
+  background: rgba(16, 185, 129, 0.12) !important;
+  border-color: rgba(16, 185, 129, 0.45) !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.18);
 }
 
 .big-countdown-label {
@@ -715,6 +727,11 @@ body.is-sidepanel {
   color: #f87171;
   font-weight: 700;
   margin-bottom: 3px;
+  transition: color 0.3s ease;
+}
+
+.big-countdown-box.ready .big-countdown-label {
+  color: #34d399 !important;
 }
 
 .big-countdown-timer {
@@ -724,6 +741,12 @@ body.is-sidepanel {
   letter-spacing: 0.5px;
   color: #ffffff;
   font-variant-numeric: tabular-nums;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.big-countdown-box.ready .big-countdown-timer {
+  color: #10b981 !important;
+  text-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
 }
 
 .provider-card.limit-hit {
@@ -891,6 +914,11 @@ body.theme-minimal .reset-txt {
   font-size: 10px;
   margin-top: 2px;
   color: var(--text-dim);
+}
+
+body.theme-minimal .reset-txt.ready {
+  color: var(--status-ok) !important;
+  font-weight: 600;
 }
 
 /* Weekly Rack Compact */

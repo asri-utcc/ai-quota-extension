@@ -174,7 +174,7 @@ function toValidEpochMs(value, now = Date.now()) {
 
 function formatShortReset(epochMs, now = Date.now()) {
   if (!epochMs) return null;
-  if (epochMs <= now) return 'รีเซ็ตแล้ว (พร้อมใช้งาน)';
+  if (epochMs <= now) return 'พร้อมใช้งาน (Reset แล้ว)';
   const totalSec = Math.max(0, Math.floor((epochMs - now) / 1000));
   const hrs = Math.floor(totalSec / 3600);
   const mins = Math.floor((totalSec % 3600) / 60);
@@ -185,7 +185,7 @@ function formatShortReset(epochMs, now = Date.now()) {
 
 function formatWeeklyReset(epochMs, now = Date.now()) {
   if (!epochMs) return null;
-  if (epochMs <= now) return 'รีเซ็ตแล้ว';
+  if (epochMs <= now) return 'พร้อมใช้งาน (Reset แล้ว)';
   const totalSec = Math.max(0, Math.floor((epochMs - now) / 1000));
   const days = Math.floor(totalSec / 86400);
   const hrs = Math.floor((totalSec % 86400) / 3600);
